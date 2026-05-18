@@ -17,28 +17,24 @@ st.markdown("Ứng dụng tự động phân tích dữ liệu, tính toán ch�
 def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
     """
     Phân loại chi tiết dữ liệu đầu vào dựa trên 7 trường hợp vận hành thực tế
-    Trả về: (Trạng thái, Màu hiển thị, Nguyên nhân chi tiết, Giải pháp đề xuất, Có_Phải_Lỗi)
     """
     # --- THÀNH PHẦN NGOẠI LỆ (LỖI THIẾT BỊ / DỮ LIỆU) ---
     if pd.isna(temp) or pd.isna(humi):
         return pd.Series([
             "Lỗi dữ liệu", 
             "gray", 
-            (f"Bản ghi tại [Trạm {station_id}] bị khuyết thiếu thông số đo đạc "
-             f"trên cột [{t_col_name}] hoặc [{h_col_name}]."), 
+            f"Bản ghi tại [Trạm {station_id}] bị khuyết thiếu thông số đo đạc trên cột [{t_col_name}] hoặc [{h_col_name}].", 
             "Bỏ qua dòng này. Kiểm tra lại log truyền nhận dữ liệu của thiết bị.", 
             True
         ])
     
-    # KIỂM TRA GIỚI HẠN VẬT LÝ AN TOÀN RIÊNG CHO MÔI TRƯỜNG KHÔNG KHÍ TẠI TRẠM ĐO KHÍ HẬU
+    # CHỈ KIỂM TRA GIỚI HẠN AN TOÀN CHO MÔI TRƯỜNG KHÔNG KHÍ (Nhiệt độ khí hậu thực tế từ -5°C đến 55°C)
     if temp < -5 or temp > 55 or humi < 1 or humi > 100:
         return pd.Series([
             "Lỗi thiết bị (Out of Range)", 
             "gray", 
-            (f"Phát hiện giá trị bất thường tại [Trạm {station_id}]: Cột [{t_col_name}] ghi nhận số [{temp}°C] "
-             f"hoặc Cột [{h_col_name}] ghi nhận số [{humi}%] vượt quá giới hạn môi trường tự nhiên."), 
-            (f"Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến "
-             f"hoặc kiểm tra lại cấu trúc cấu hình dải đo của [Trạm {station_id}]."), 
+            f"Phát hiện giá trị bất thường tại [Trạm {station_id}]: Cột [{t_col_name}] ghi nhận số [{temp}°C] hoặc Cột [{h_col_name}] ghi nhận số [{humi}%] vượt quá giới hạn môi trường tự nhiên.", 
+            "Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến hoặc kiểm tra lại cấu hình dải đo của cảm biến khí hậu.", 
             True
         ])
     
@@ -48,10 +44,8 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 5: Bão hòa hơi nước (VPD: {vpd} kPa)", 
             "darkred", 
-            (f"Môi trường tại [Trạm {station_id}] đạt trạng thái bão hòa ẩm hoàn toàn (Độ ẩm cột [{h_col_name}] = {humi}%). "
-             f"Thường xảy ra vào ban đêm, khi trời mưa kéo dài hoặc phun sương quá mức."), 
-            ("Cảnh báo nguy cơ đọng sương gây nấm bệnh cực cao! Kích hoạt ngay quạt đối lưu và quạt hút để ép ẩm ra ngoài; "
-             "mở bớt cửa thông gió; tuyệt đối ngừng tưới; nếu là ban đêm hãy bật hệ thống sưởi nâng nhiệt để giảm ẩm bão hòa."),
+            f"Môi trường tại [Trạm {station_id}] đạt trạng thái bão hòa ẩm hoàn toàn (Độ ẩm cột [{h_col_name}] = {humi}%). Thường xảy ra vào ban đêm, khi trời mưa kéo dài hoặc phun sương quá mức.", 
+            "Cảnh báo nguy cơ đọng sương gây nấm bệnh cực cao! Kích hoạt ngay quạt đối lưu và quạt hút để ép ẩm ra ngoài; mở bớt cửa thông gió; tuyệt đối ngừng tưới; nếu là ban đêm hãy bật hệ thống sưởi nâng nhiệt để giảm ẩm bão hòa.",
             False
         ])
         
@@ -60,10 +54,8 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 1: VPD Quá Thấp (VPD: {vpd} kPa)", 
             "red", 
-            (f"Tại [Trạm {station_id}]: Độ ẩm cột [{h_col_name}] đang quá cao ({humi}%) hoặc nhiệt độ cột [{t_col_name}] hạ thấp ({temp}°C). "
-             f"Cây bị nghẹn rễ, lực hút yếu và không thể thoát hơi nước để nhận dinh dưỡng."), 
-            ("Bật quạt đối lưu điều hòa không khí; ngừng toàn bộ hệ thống phun sương làm mát; "
-             "mở bớt mái che hoặc mở cửa hông nhà kính để thoát ẩm tồn đọng."),
+            f"Tại [Trạm {station_id}]: Độ ẩm cột [{h_col_name}] đang quá cao ({humi}%) hoặc nhiệt độ cột [{t_col_name}] hạ thấp ({temp}°C). Cây bị nghẹn rễ, lực hút yếu và không thể thoát hơi nước để nhận dinh dưỡng.", 
+            "Bật quạt đối lưu điều hòa không khí; ngừng toàn bộ hệ thống phun sương làm mát; mở bớt mái che hoặc mở cửa hông nhà kính để thoát ẩm tồn đọng.",
             False
         ])
         
@@ -72,8 +64,7 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 2: Thấp Tối Ưu (VPD: {vpd} kPa)", 
             "blue", 
-            (f"Môi trường tại [Trạm {station_id}] ẩm dịu mát (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%), "
-             f"chênh lệch áp suất hơi nước nhẹ nhàng, an toàn."), 
+            f"Môi trường tại [Trạm {station_id}] ẩm dịu mát (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%), chênh lệch áp suất hơi nước nhẹ nhàng, an toàn.", 
             "Điều kiện hoàn hảo cho giai đoạn kích rễ, nuôi cây mô hoặc cây con mới ra vườn giúp tránh mất nước qua lá. Tiếp tục duy trì ổn định hệ thống.",
             False
         ])
@@ -83,9 +74,8 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 3: Cao Tối Ưu (VPD: {vpd} kPa)", 
             "green", 
-            (f"Môi trường tại [Trạm {station_id}] đạt sự cân bằng tuyệt vời (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%). "
-             f"Khí khổng mở tối đa để hấp thụ CO2."), 
-            "Vùng vàng kích hoạt năng suất cao nhất cho cây trưởng thành quang hợp và hấp thụ phân bón (Canxi, Magiê) tốt nhất. Duy trì các chế độ vận hành hiện tại.",
+            f"Môi trường tại [Trạm {station_id}] đạt sự cân bằng tuyệt vời (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%). Khí khổng mở tối đa để hấp thụ CO2.", 
+            "Vùng vàng kích hoạt năng suất cao nhất cho cây trưởng thành quang hợp và hấp thụ phân bón tốt nhất. Duy trì các chế độ vận hành hiện tại.",
             False
         ])
         
@@ -94,8 +84,7 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 4: VPD Quá Cao (VPD: {vpd} kPa)", 
             "orange", 
-            (f"Tại [Trạm {station_id}]: Nhiệt độ cột [{t_col_name}] quá cao ({temp}°C) hoặc độ ẩm cột [{h_col_name}] sụt giảm sâu còn {humi}%. "
-             f"Cây bị stress nặng, phải đóng khí khổng tự vệ, ngừng quang hợp."), 
+            f"Tại [Trạm {station_id}]: Nhiệt độ cột [{t_col_name}] quá cao ({temp}°C) hoặc độ ẩm cột [{h_col_name}] sụt giảm sâu còn {humi}%. Cây bị stress nặng, phải đóng khí khổng tự vệ, ngừng quang hợp.", 
             "Kích hoạt ngay hệ thống phun sương bù ẩm; kéo lưới cắt nắng (lưới lan) giảm bức xạ nhiệt trực tiếp; tăng cường tưới nhỏ giọt dưới gốc cấp nước cho rễ.",
             False
         ])
@@ -118,6 +107,7 @@ if uploaded_file is not None:
         time_col = None
         stt_col = None
         
+        # Tự động dò tìm cột Thời gian và STT trạm
         for col in original_columns:
             col_lower = col.lower()
             if col_lower in ['thời gian', 'thoigian', 'time', 'timestamp', 'date']:
@@ -130,18 +120,17 @@ if uploaded_file is not None:
         elif not stt_col:
             st.error("⚠️ Không tìm thấy cột định danh Trạm hoặc STT trong file.")
         else:
-            # Chuẩn hóa thời gian sang dạng Datetime chuẩn
-            df[time_col] = df[time_col].astype(str).str.replace(r'(\d{2})-(\d{2})-(\d{2})$', r'\1:\2:\3', regex=True)
-            df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
-            df = df.dropna(subset=[time_col])
+            # GIỮ NGUYÊN CHUỖI VĂN BẢN THỜI GIAN THÔ, KHÔNG ÉP DATETIME GÂY LỖI XÓA DÒNG
+            df[time_col] = df[time_col].astype(str)
             
-            # Lọc riêng dữ liệu vi khí hậu Trạm 5
+            # Lọc chính xác dữ liệu vi khí hậu của riêng Trạm đo không khí (STT == "5")
             df_air = df[df[stt_col].astype(str) == "5"].copy()
             
             total_rows = len(df)
             station_5_rows = len(df_air)
             other_station_rows = total_rows - station_5_rows
             
+            # Tìm cột nhiệt độ không khí (tempKK) và độ ẩm không khí (humiKK)
             t_col = None
             h_col = None
             for col in df_air.columns:
@@ -154,22 +143,20 @@ if uploaded_file is not None:
             if not t_col or not h_col:
                 st.error("⚠️ Không tìm thấy cột dữ liệu Nhiệt độ không khí (tempKK) hoặc Độ ẩm không khí (humiKK) trong file.")
             else:
+                # Ép kiểu dữ liệu số cho cột đo của Trạm 5
                 df_air[t_col] = pd.to_numeric(df_air[t_col], errors='coerce')
                 df_air[h_col] = pd.to_numeric(df_air[h_col], errors='coerce')
                 df_air = df_air.dropna(subset=[t_col, h_col])
                 
-                # Tính toán giá trị số của VPD
+                # Tính toán giá trị VPD thật
                 df_air['VPD (kPa)'] = calculate_vpd(df_air[t_col], df_air[h_col]).round(3)
                 
-                # [ĐÃ SỬA LỖI ĐỒNG BỘ THAM SỐ TẠI ĐÂY]: Truyền chính xác 6 đối số tương ứng với định nghĩa hàm
+                # Áp dụng hàm phân tích phân loại trường hợp sinh lý
                 df_air[['Trạng thái', 'Màu sắc', 'Nguyên nhân', 'Giải pháp', 'Là_Lỗi']] = df_air.apply(
                     lambda row: analyze_7_cases(row['VPD (kPa)'], row[t_col], row[h_col], row[stt_col], t_col, h_col), axis=1
                 )
                 
-                # Định dạng lại chuỗi thời gian hiển thị
-                df_air['ThoiGian_HienThi'] = df_air[time_col].dt.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Sắp xếp xuôi toàn vẹn theo tiến trình thời gian từ cũ tới mới (Bắt đầu từ 18/02)
+                # Sắp xếp chuỗi thời gian tăng dần một cách tự nhiên
                 df_air = df_air.sort_values(by=time_col, ascending=True)
                 
                 # --- PHẦN 1: DASHBOARD THỐNG KÊ TỔNG QUAN TỶ LỆ ---
@@ -203,7 +190,7 @@ if uploaded_file is not None:
                     st.success("🎉 Xin chúc mừng! Hệ thống kiểm tra toàn bộ dữ liệu và thấy môi trường nhà kính luôn duy trì ở trạng thái tối ưu lý tưởng.")
                 else:
                     for _, row in alerts_df.iterrows():
-                        display_time = row['ThoiGian_HienThi']
+                        display_time = row[time_col]
                         status_str = row['Trạng thái']
                         color = row['Màu sắc']
                         reason_str = row['Nguyên nhân']

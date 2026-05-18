@@ -14,15 +14,7 @@ st.title("🌿 Hệ Thống Phân Tích & Cảnh Báo VPD Nhà Kính")
 st.markdown("Ứng dụng tự động phân tích dữ liệu, tính toán chỉ số **VPD**, bắt bệnh môi trường nhà kính theo **7 trường hợp toàn diện** và đề xuất giải pháp kỹ thuật cụ thể.")
 
 # 1. ĐỊNH NGHĨA LOGIC PHÂN TÍCH TOÀN DIỆN (7 TRƯỜNG HỢP)
-def calculate_vpd(temp, humi):
-    """Tính toán chỉ số VPD (kPa) từ Nhiệt độ (°C) và Độ ẩm (%)"""
-    # Công thức Tetens tính Áp suất hơi bão hòa (Saturated Vapor Pressure)
-    vp_sat = 0.61078 * np.exp((17.27 * temp) / (temp + 237.3))
-    # Tính Thiếu hụt áp suất hơi nước (Vapor Pressure Deficit)
-    vpd = vp_sat * (1 - (humi / 100))
-    return np.clip(vpd, 0, None)
-
-def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
+def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
     """
     Phân loại chi tiết dữ liệu đầu vào dựa trên 7 trường hợp vận hành thực tế
     Trả về: (Trạng thái, Màu hiển thị, Nguyên nhân chi tiết, Giải pháp đề xuất, Có_Phải_Lỗi)
@@ -32,7 +24,8 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             "Lỗi dữ liệu", 
             "gray", 
-            f"Bản ghi tại [Trạm {station_id}] bị khuyết thiếu thông số đo đạc trên cột [{t_col_name}] hoặc [{h_col_name}].", 
+            (f"Bản ghi tại [Trạm {station_id}] bị khuyết thiếu thông số đo đạc "
+             f"trên cột [{t_col_name}] hoặc [{h_col_name}]."), 
             "Bỏ qua dòng này. Kiểm tra lại log truyền nhận dữ liệu của thiết bị.", 
             True
         ])
@@ -42,13 +35,12 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             "Lỗi thiết bị (Out of Range)", 
             "gray", 
-            f"Phát hiện giá trị bất thường tại [Trạm {station_id}]: Cột [{t_col_name}] ghi nhận số [{temp}°C] hoặc Cột [{h_col_name}] ghi nhận số [{humi}%] vượt quá giới hạn môi trường tự nhiên.", 
-            f"Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến hoặc kiểm tra lại cấu trúc cấu hình dải đo của [Trạm {station_id}].", 
+            (f"Phát hiện giá trị bất thường tại [Trạm {station_id}]: Cột [{t_col_name}] ghi nhận số [{temp}°C] "
+             f"hoặc Cột [{h_col_name}] ghi nhận số [{humi}%] vượt quá giới hạn môi trường tự nhiên."), 
+            (f"Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến "
+             f"hoặc kiểm tra lại cấu trúc cấu hình dải đo của [Trạm {station_id}]."), 
             True
         ])
-    
-    # Tính VPD cho dữ liệu hợp lệ
-    vpd = round(calculate_vpd(temp, humi), 3)
     
     # --- THÀNH PHẦN SINH LÝ CÂY TRỒNG & VẬN HÀNH ---
     # Trường hợp 5: Độ ẩm bão hòa hoàn toàn (Độ ẩm đạt 100%, VPD = 0)
@@ -56,8 +48,10 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 5: Bão hòa hơi nước (VPD: {vpd} kPa)", 
             "darkred", 
-            f"Môi trường tại [Trạm {station_id}] đạt trạng thái bão hòa ẩm hoàn toàn (Độ ẩm cột [{h_col_name}] = {humi}%). Thường xảy ra vào ban đêm, khi trời mưa kéo dài hoặc phun sương quá mức.", 
-            "Cảnh báo nguy cơ đọng sương gây nấm bệnh cực cao! Kích hoạt ngay quạt đối lưu và quạt hút để ép ẩm ra ngoài; mở bớt cửa thông gió; tuyệt đối ngừng tưới; nếu là ban đêm hãy bật hệ thống sưởi nâng nhiệt để giảm ẩm bão hòa.",
+            (f"Môi trường tại [Trạm {station_id}] đạt trạng thái bão hòa ẩm hoàn toàn (Độ ẩm cột [{h_col_name}] = {humi}%). "
+             f"Thường xảy ra vào ban đêm, khi trời mưa kéo dài hoặc phun sương quá mức."), 
+            ("Cảnh báo nguy cơ đọng sương gây nấm bệnh cực cao! Kích hoạt ngay quạt đối lưu và quạt hút để ép ẩm ra ngoài; "
+             "mở bớt cửa thông gió; tuyệt đối ngừng tưới; nếu là ban đêm hãy bật hệ thống sưởi nâng nhiệt để giảm ẩm bão hòa."),
             False
         ])
         
@@ -66,8 +60,10 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 1: VPD Quá Thấp (VPD: {vpd} kPa)", 
             "red", 
-            f"Tại [Trạm {station_id}]: Độ ẩm cột [{h_col_name}] đang quá cao ({humi}%) hoặc nhiệt độ cột [{t_col_name}] hạ thấp ({temp}°C). Cây bị nghẹn rễ, lực hút yếu và không thể thoát hơi nước để nhận dinh dưỡng.", 
-            "Bật quạt đối lưu điều hòa không khí; ngừng toàn bộ hệ thống phun sương làm mát; mở bớt mái che hoặc mở cửa hông nhà kính để thoát ẩm tồn đọng.",
+            (f"Tại [Trạm {station_id}]: Độ ẩm cột [{h_col_name}] đang quá cao ({humi}%) hoặc nhiệt độ cột [{t_col_name}] hạ thấp ({temp}°C). "
+             f"Cây bị nghẹn rễ, lực hút yếu và không thể thoát hơi nước để nhận dinh dưỡng."), 
+            ("Bật quạt đối lưu điều hòa không khí; ngừng toàn bộ hệ thống phun sương làm mát; "
+             "mở bớt mái che hoặc mở cửa hông nhà kính để thoát ẩm tồn đọng."),
             False
         ])
         
@@ -76,7 +72,8 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 2: Thấp Tối Ưu (VPD: {vpd} kPa)", 
             "blue", 
-            f"Môi trường tại [Trạm {station_id}] ẩm dịu mát (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%), chênh lệch áp suất hơi nước nhẹ nhàng, an toàn.", 
+            (f"Môi trường tại [Trạm {station_id}] ẩm dịu mát (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%), "
+             f"chênh lệch áp suất hơi nước nhẹ nhàng, an toàn."), 
             "Điều kiện hoàn hảo cho giai đoạn kích rễ, nuôi cây mô hoặc cây con mới ra vườn giúp tránh mất nước qua lá. Tiếp tục duy trì ổn định hệ thống.",
             False
         ])
@@ -86,7 +83,8 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 3: Cao Tối Ưu (VPD: {vpd} kPa)", 
             "green", 
-            f"Môi trường tại [Trạm {station_id}] đạt sự cân bằng tuyệt vời (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%). Khí khổng mở tối đa để hấp thụ CO2.", 
+            (f"Môi trường tại [Trạm {station_id}] đạt sự cân bằng tuyệt vời (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%). "
+             f"Khí khổng mở tối đa để hấp thụ CO2."), 
             "Vùng vàng kích hoạt năng suất cao nhất cho cây trưởng thành quang hợp và hấp thụ phân bón (Canxi, Magiê) tốt nhất. Duy trì các chế độ vận hành hiện tại.",
             False
         ])
@@ -96,10 +94,17 @@ def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
         return pd.Series([
             f"Trường hợp 4: VPD Quá Cao (VPD: {vpd} kPa)", 
             "orange", 
-            f"Tại [Trạm {station_id}]: Nhiệt độ cột [{t_col_name}] quá cao ({temp}°C) hoặc độ ẩm cột [{h_col_name}] sụt giảm sâu còn {humi}%. Cây bị stress nặng, phải đóng khí khổng tự vệ, ngừng quang hợp.", 
+            (f"Tại [Trạm {station_id}]: Nhiệt độ cột [{t_col_name}] quá cao ({temp}°C) hoặc độ ẩm cột [{h_col_name}] sụt giảm sâu còn {humi}%. "
+             f"Cây bị stress nặng, phải đóng khí khổng tự vệ, ngừng quang hợp."), 
             "Kích hoạt ngay hệ thống phun sương bù ẩm; kéo lưới cắt nắng (lưới lan) giảm bức xạ nhiệt trực tiếp; tăng cường tưới nhỏ giọt dưới gốc cấp nước cho rễ.",
             False
         ])
+
+def calculate_vpd(temp, humi):
+    """Tính toán chỉ số VPD (kPa) từ Nhiệt độ (°C) và Độ ẩm (%)"""
+    vp_sat = 0.61078 * np.exp((17.27 * temp) / (temp + 237.3))
+    vpd = vp_sat * (1 - (humi / 100))
+    return np.clip(vpd, 0, None)
 
 # 2. KHU VỰC TẢI FILE DỮ LIỆU JSON
 uploaded_file = st.file_uploader("Kéo thả file dữ liệu quan trắc thực địa dạng JSON vào đây để phân tích", type=["json"])
@@ -125,7 +130,7 @@ if uploaded_file is not None:
         elif not stt_col:
             st.error("⚠️ Không tìm thấy cột định danh Trạm hoặc STT trong file.")
         else:
-            # Chuẩn hóa thời gian sang dạng Datetime
+            # Chuẩn hóa thời gian sang dạng Datetime chuẩn
             df[time_col] = df[time_col].astype(str).str.replace(r'(\d{2})-(\d{2})-(\d{2})$', r'\1:\2:\3', regex=True)
             df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
             df = df.dropna(subset=[time_col])
@@ -153,10 +158,10 @@ if uploaded_file is not None:
                 df_air[h_col] = pd.to_numeric(df_air[h_col], errors='coerce')
                 df_air = df_air.dropna(subset=[t_col, h_col])
                 
-                # Tính toán chỉ số số học của VPD
+                # Tính toán giá trị số của VPD
                 df_air['VPD (kPa)'] = calculate_vpd(df_air[t_col], df_air[h_col]).round(3)
                 
-                # Áp dụng logic phân loại dữ liệu 7 trường hợp
+                # [ĐÃ SỬA LỖI ĐỒNG BỘ THAM SỐ TẠI ĐÂY]: Truyền chính xác 6 đối số tương ứng với định nghĩa hàm
                 df_air[['Trạng thái', 'Màu sắc', 'Nguyên nhân', 'Giải pháp', 'Là_Lỗi']] = df_air.apply(
                     lambda row: analyze_7_cases(row['VPD (kPa)'], row[t_col], row[h_col], row[stt_col], t_col, h_col), axis=1
                 )

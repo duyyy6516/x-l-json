@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import json
 
-# Cấu hình giao diện ứng dụng chuyên nghiệp, sạch sẽ
+# Cấu hình giao diện ứng dụng gọn gàng, chuyên nghiệp
 st.set_page_config(
     page_title="Hệ Thống Phân Tích & Cảnh Báo VPD Nhà Kính",
     page_icon="🌿",
@@ -11,13 +11,13 @@ st.set_page_config(
 )
 
 st.title("🌿 Hệ Thống Phân Tích & Cảnh Báo VPD Nhà Kính")
-st.markdown("Ứng dụng tự động phân tích dữ liệu, tính toán chỉ số **VPD**, bắt bệnh môi trường nhà kính theo **7 trường hợp toàn diện** và đề xuất giải pháp kỹ thuật cụ thể.")
+st.markdown("Ứng dụng tự động phân tích dữ liệu, tính toán chỉ số **VPD**, bắt bệnh môi trường nhà kính theo **7 trường hợp toàn diện**.")
 
 # 1. ĐỊNH NGHĨA LOGIC PHÂN TÍCH TOÀN DIỆN (7 TRƯỜNG HỢP)
 def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
     """
     Phân loại chi tiết dữ liệu đầu vào dựa trên 7 trường hợp vận hành thực tế
-    Trả về: (Mã TH ngắn, Tên hiển thị đầy đủ, Màu hiển thị, Nguyên nhân chi tiết, Giải pháp đề xuất, Có_Phải_Lỗi)
+    Gán cứng mã nhóm (Ma_TH) cố định cho từng dòng dữ liệu
     """
     # --- THÀNH PHẦN NGOẠI LỆ (LỖI THIẾT BỊ / DỮ LIỆU) ---
     if pd.isna(temp) or pd.isna(humi):
@@ -30,7 +30,6 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
             True
         ])
     
-    # KIỂM TRA GIỚI HẠN AN TOÀN CHO MÔI TRƯỜNG KHÔNG KHÍ (Nhiệt độ khí hậu thực tế từ -5°C đến 55°C)
     if temp < -5 or temp > 55 or humi < 1 or humi > 100:
         return pd.Series([
             "Loi",
@@ -115,7 +114,6 @@ if uploaded_file is not None:
         time_col = None
         stt_col = None
         
-        # Tự động dò tìm cột Thời gian và STT trạm
         for col in original_columns:
             col_lower = col.lower()
             if col_lower in ['thời gian', 'thoigian', 'time', 'timestamp', 'date']:
@@ -130,7 +128,7 @@ if uploaded_file is not None:
         else:
             df[time_col] = df[time_col].astype(str)
             
-            # Lọc riêng dữ liệu vi khí hậu của Trạm đo không khí (STT == "5")
+            # Lọc riêng dữ liệu vi khí hậu Trạm 5
             df_air = df[df[stt_col].astype(str) == "5"].copy()
             
             total_rows = len(df)
@@ -156,11 +154,12 @@ if uploaded_file is not None:
                 # Tính toán giá trị VPD thật
                 df_air['VPD (kPa)'] = calculate_vpd(df_air[t_col], df_air[h_col]).round(3)
                 
-                # Áp dụng hàm phân tích phân loại trường hợp sinh lý
+                # Phân loại dữ liệu và gán thẻ cố định (TH1 -> TH5, Loi)
                 df_air[['Ma_TH', 'Trạng thái', 'Màu sắc', 'Nguyên nhân', 'Giải pháp', 'Là_Lỗi']] = df_air.apply(
                     lambda row: analyze_7_cases(row['VPD (kPa)'], row[t_col], row[h_col], row[stt_col], t_col, h_col), axis=1
                 )
                 
+                # Luôn sắp xếp xuôi theo trục thời gian tăng dần từ ngày cũ đến ngày mới
                 df_air = df_air.sort_values(by=time_col, ascending=True)
                 
                 # --- PHẦN 1: DASHBOARD THỐNG KÊ TỔNG QUAN TỶ LỆ ---
@@ -180,46 +179,46 @@ if uploaded_file is not None:
                 col4.metric("🟢 TH3: Cao Tối Ưu", f"{get_pct('TH3'):.1f}%")
                 col5.metric("🟠 TH4: VPD Quá Cao", f"{get_pct('TH4'):.1f}%")
                 
-                st.info(f"💡 **Trường hợp 7 (Cách ly hệ thống):** Tìm thấy {other_station_rows} dòng dữ liệu của các cảm biến đất (STT 1,2,3) trong file. Hệ thống đã cách ly an toàn, dữ liệu thống kê và cảnh báo đang tính toán riêng cho dữ liệu khí hậu trạm 5.")
+                st.info(f"💡 **Trường hợp 7 (Cách ly hệ thống):** Tìm thấy {other_station_rows} dòng dữ liệu của các cảm biến đất (STT 1,2,3) trong file. Hệ thống đã cách ly an toàn, dữ liệu chỉ xử lý riêng cho trạm khí hậu 5.")
                 
-                # --- CHỨC NĂNG MỚI: BỘ LỌC XEM TỪNG TRƯỜNG HỢP RIÊNG BIỆT (ĐÃ CHUẨN HÓA MÃ) ---
-                st.subheader("🔍 Xem Riêng Từng Trường Hợp Cảnh Báo")
+                # --- MENU LỰA CHỌN CỐ ĐỊNH CHỈ CÓ 6 DÒNG DUY NHẤT ---
+                st.subheader("🔍 Bộ Lọc Phân Tách Trường Hợp")
                 
-                # Từ điển map giữa mã Code ngắn và Tên hiển thị thân thiện trên giao diện Selectbox
-                case_mapping = {
-                    "ALL": "Tất cả các mốc bất thường & lỗi nguy cơ",
-                    "TH5": "Trường hợp 5: Bão hòa hơi nước (VPD = 0 kPa)",
+                # Định nghĩa danh sách các nhóm cố định, không đem từng dòng trong file nhét vào đây nữa!
+                case_options = {
+                    "ALL": "Tất cả các mốc cảnh báo nguy cơ nguy hiểm (TH1, TH4, TH5 và lỗi thiết bị)",
                     "TH4": "Trường hợp 4: VPD Quá Cao (Cây Stress khô nóng)",
-                    "TH1": "Trường hợp 1: VPD Quá Thấp (Không khí quá ẩm)",
-                    "TH3": "Trường hợp 3: Cao Tối Ưu (Vùng kích năng suất)",
-                    "TH2": "Trường hợp 2: Thấp Tối Ưu (Vùng nuôi cây con)",
-                    "Loi": "Các dòng phát hiện lỗi dữ liệu / lỗi cảm biến phần cứng"
+                    "TH5": "Trường hợp 5: Bão hòa hơi nước (VPD = 0 kPa, Nguy cơ đọng sương)",
+                    "TH1": "Trường hợp 1: VPD Quá Thấp (Không khí quá ẩm, nghẹn rễ)",
+                    "TH3": "Trường hợp 3: Cao Tối Ưu (Vùng quang hợp mạnh tốt nhất)",
+                    "TH2": "Trường hợp 2: Thấp Tối Ưu (Vùng ẩm dịu mát cho cây con)",
+                    "Loi": "Các mốc thời gian phát hiện lỗi dữ liệu / lỗi cảm biến phần cứng"
                 }
                 
                 selected_label = st.selectbox(
-                    "Chọn trường hợp cụ thể bạn muốn kiểm tra kỹ:",
-                    options=list(case_mapping.values()),
+                    "Chọn duy nhất một nhóm để bung danh sách chi tiết ra xem:",
+                    options=list(case_options.values()),
                     index=0
                 )
                 
-                # Tìm ngược lại mã Code ngắn dựa trên Tên hiển thị được chọn
-                selected_code = [k for k, v in case_mapping.items() if v == selected_label][0]
+                # Tìm lại mã viết tắt ẩn (ALL, TH4, TH5...) từ dòng chữ người dùng chọn
+                selected_code = [k for k, v in case_options.items() if v == selected_label][0]
                 
-                # --- PHẦN 2: DANH SÁCH BẮT BỆNH VÀ HIỂN THỊ GIẢI PHÁP CHI TIẾT ---
-                st.subheader("⚠️ Log Cảnh Báo Vi Khí Hậu & Hướng Dẫn Xử Lý Kỹ Thuật Chi Tiết")
+                # --- PHẦN 2: LOG CHI TIẾT BUNG RA SAU KHI CHỌN ---
+                st.subheader("⚠️ Chi Tiết Các Mốc Thời Gian Trích Xuất Được")
                 
-                # Áp dụng bộ lọc chính xác tuyệt đối theo mã Code ngắn
+                # Thực hiện lọc bảng dữ liệu dựa theo đúng mã nhóm cố định đã chọn
                 if selected_code == "ALL":
-                    # Mặc định hiển thị tất cả các trường hợp cần phải hành động khẩn cấp
                     alerts_df = df_air[df_air['Ma_TH'].isin(["TH5", "TH1", "TH4", "Loi"])]
                 else:
-                    # Lọc riêng lẻ duy nhất 1 trường hợp duy nhất
                     alerts_df = df_air[df_air['Ma_TH'] == selected_code]
                 
                 if alerts_df.empty:
-                    st.success(f"🎉 Không tìm thấy mốc thời gian nào rơi vào nhóm trạng thái đã chọn.")
+                    st.success("🎉 Không tìm thấy mốc thời gian nào thuộc nhóm trạng thái này trong file dữ liệu của bạn.")
                 else:
-                    st.write(f"Tìm thấy **{len(alerts_df)}** mốc thời gian thỏa mãn điều kiện lọc:")
+                    st.write(f"Tìm thấy **{len(alerts_df)}** mốc thời gian thuộc diện **{selected_label}**:")
+                    
+                    # Vòng lặp show ra toàn bộ các dòng thuộc nhóm đó ở bên dưới
                     for _, row in alerts_df.iterrows():
                         display_time = row[time_col]
                         status_str = row['Trạng thái']
@@ -227,7 +226,6 @@ if uploaded_file is not None:
                         reason_str = row['Nguyên nhân']
                         sol_str = row['Giải pháp']
                         
-                        # Hiển thị màu sắc giao diện tương ứng
                         if color == "darkred":
                             st.error(f"❌ **⏰ Thời gian: {display_time}** | **{status_str}**")
                             st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")

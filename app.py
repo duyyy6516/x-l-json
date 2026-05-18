@@ -34,7 +34,7 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
             "Lỗi thiết bị (Out of Range)", 
             "gray", 
             f"Phát hiện giá trị bất thường tại [Trạm {station_id}]: Cột [{t_col_name}] ghi nhận số [{temp}°C] hoặc Cột [{h_col_name}] ghi nhận số [{humi}%] vượt quá giới hạn môi trường tự nhiên.", 
-            "Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến hoặc kiểm tra lại cấu hình dải đo của cảm biến khí hậu.", 
+            "Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến hoặc kiểm tra lại cấu trúc cấu hình dải đo của cảm biến khí hậu.", 
             True
         ])
     
@@ -120,17 +120,15 @@ if uploaded_file is not None:
         elif not stt_col:
             st.error("⚠️ Không tìm thấy cột định danh Trạm hoặc STT trong file.")
         else:
-            # GIỮ NGUYÊN CHUỖI VĂN BẢN THỜI GIAN THÔ, KHÔNG ÉP DATETIME GÂY LỖI XÓA DÒNG
             df[time_col] = df[time_col].astype(str)
             
-            # Lọc chính xác dữ liệu vi khí hậu của riêng Trạm đo không khí (STT == "5")
+            # Lọc riêng dữ liệu vi khí hậu của Trạm đo không khí (STT == "5")
             df_air = df[df[stt_col].astype(str) == "5"].copy()
             
             total_rows = len(df)
             station_5_rows = len(df_air)
             other_station_rows = total_rows - station_5_rows
             
-            # Tìm cột nhiệt độ không khí (tempKK) và độ ẩm không khí (humiKK)
             t_col = None
             h_col = None
             for col in df_air.columns:
@@ -143,7 +141,6 @@ if uploaded_file is not None:
             if not t_col or not h_col:
                 st.error("⚠️ Không tìm thấy cột dữ liệu Nhiệt độ không khí (tempKK) hoặc Độ ẩm không khí (humiKK) trong file.")
             else:
-                # Ép kiểu dữ liệu số cho cột đo của Trạm 5
                 df_air[t_col] = pd.to_numeric(df_air[t_col], errors='coerce')
                 df_air[h_col] = pd.to_numeric(df_air[h_col], errors='coerce')
                 df_air = df_air.dropna(subset=[t_col, h_col])
@@ -156,7 +153,6 @@ if uploaded_file is not None:
                     lambda row: analyze_7_cases(row['VPD (kPa)'], row[t_col], row[h_col], row[stt_col], t_col, h_col), axis=1
                 )
                 
-                # Sắp xếp chuỗi thời gian tăng dần một cách tự nhiên
                 df_air = df_air.sort_values(by=time_col, ascending=True)
                 
                 # --- PHẦN 1: DASHBOARD THỐNG KÊ TỔNG QUAN TỶ LỆ ---
@@ -179,16 +175,35 @@ if uploaded_file is not None:
                 
                 st.info(f"💡 **Trường hợp 7 (Cách ly hệ thống):** Tìm thấy {other_station_rows} dòng dữ liệu của các cảm biến đất (STT 1,2,3) trong file. Hệ thống đã cách ly an toàn, dữ liệu thống kê và cảnh báo đang tính toán riêng cho dữ liệu khí hậu trạm 5.")
                 
-                # --- PHẦN 2: DANH SÁCH BẮT BỆNH VÀ HIỂN THỊ GIẢI PHÁP CHI TIẾT ---
-                st.subheader("⚠️ Log Cảnh Báo Vi Khí Hậu & Hướng Dẫn Xử Lý Kỹ Thuật Tổng Thể")
-                st.markdown("Danh sách liệt kê các mốc thời gian phát hiện vi khí hậu bất thường nguy cơ cao từ ngày đầu tiên trở đi:")
+                # --- CHỨC NĂNG MỚI: BỘ LỌC XEM TỪNG TRƯỜNG HỢP RIÊNG BIỆT ---
+                st.subheader("🔍 Xem Riêng Từng Trường Hợp Cảnh Báo")
                 
-                alert_conditions = df_air['Trạng thái'].str.contains("Trường hợp 5|Trường hợp 1|Trường hợp 4|Lỗi")
-                alerts_df = df_air[alert_conditions]
+                # Gom danh sách các trường hợp thực tế xuất hiện trong dữ liệu để làm tùy chọn lọc
+                available_cases = sorted(df_air['Trạng thái'].unique())
+                filter_options = ["Tất cả cảnh báo lỗi & bất thường"] + available_cases
+                
+                selected_case = st.selectbox(
+                    "Chọn trường hợp cụ thể bạn muốn kiểm tra kỹ:",
+                    options=filter_options,
+                    index=0
+                )
+                
+                # --- PHẦN 2: DANH SÁCH BẮT BỆNH VÀ HIỂN THỊ GIẢI PHÁP CHI TIẾT ---
+                st.subheader("⚠️ Log Cảnh Báo Vi Khí Hậu & Hướng Dẫn Xử Lý Kỹ Thuật Chi Tiết")
+                
+                # Áp dụng logic lọc dữ liệu dựa theo lựa chọn của người dùng
+                if selected_case == "Tất cả cảnh báo lỗi & bất thường":
+                    # Mặc định: Chỉ hiện các dòng có vấn đề (TH5, TH1, TH4 hoặc Lỗi)
+                    alert_conditions = df_air['Trạng thái'].str.contains("Trường hợp 5|Trường hợp 1|Trường hợp 4|Lỗi")
+                    alerts_df = df_air[alert_conditions]
+                else:
+                    # Xem riêng biệt chính xác một trường hợp do người dùng bấm chọn
+                    alerts_df = df_air[df_air['Trạng thái'] == selected_case]
                 
                 if alerts_df.empty:
-                    st.success("🎉 Xin chúc mừng! Hệ thống kiểm tra toàn bộ dữ liệu và thấy môi trường nhà kính luôn duy trì ở trạng thái tối ưu lý tưởng.")
+                    st.success(f"🎉 Không tìm thấy mốc thời gian nào rơi vào trạng thái: '{selected_case}'")
                 else:
+                    st.write(f"Tìm thấy **{len(alerts_df)}** mốc thời gian thuộc nhóm này:")
                     for _, row in alerts_df.iterrows():
                         display_time = row[time_col]
                         status_str = row['Trạng thái']
@@ -196,6 +211,7 @@ if uploaded_file is not None:
                         reason_str = row['Nguyên nhân']
                         sol_str = row['Giải pháp']
                         
+                        # Hiển thị màu sắc tương ứng theo cấu trúc thiết kế chuẩn
                         if color == "darkred":
                             st.error(f"❌ **⏰ Thời gian: {display_time}** | **{status_str}**")
                             st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
@@ -208,6 +224,16 @@ if uploaded_file is not None:
                             st.markdown("---")
                         elif color == "orange":
                             st.warning(f"⚠️ **⏰ Thời gian: {display_time}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
+                            st.markdown("---")
+                        elif color == "green":
+                            st.success(f"🟢 **⏰ Thời gian: {display_time}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
+                            st.markdown("---")
+                        elif color == "blue":
+                            st.info(f"🔵 **⏰ Thời gian: {display_time}** | **{status_str}**")
                             st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
                             st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
                             st.markdown("---")

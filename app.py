@@ -22,7 +22,7 @@ def calculate_vpd(temp, humi):
     vpd = vp_sat * (1 - (humi / 100))
     return np.clip(vpd, 0, None)
 
-def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
+def analyze_7_cases(temp, humi, station_id, t_col_name, h_col_name):
     """
     Phân loại chi tiết dữ liệu đầu vào dựa trên 7 trường hợp vận hành thực tế
     Trả về: (Trạng thái, Màu hiển thị, Nguyên nhân chi tiết, Giải pháp đề xuất, Có_Phải_Lỗi)
@@ -46,6 +46,9 @@ def analyze_7_cases(vpd, temp, humi, station_id, t_col_name, h_col_name):
             f"Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh đầu dò cảm biến hoặc kiểm tra lại cấu trúc cấu hình dải đo của [Trạm {station_id}].", 
             True
         ])
+    
+    # Tính VPD cho dữ liệu hợp lệ
+    vpd = round(calculate_vpd(temp, humi), 3)
     
     # --- THÀNH PHẦN SINH LÝ CÂY TRỒNG & VẬN HÀNH ---
     # Trường hợp 5: Độ ẩm bão hòa hoàn toàn (Độ ẩm đạt 100%, VPD = 0)
@@ -150,123 +153,77 @@ if uploaded_file is not None:
                 df_air[h_col] = pd.to_numeric(df_air[h_col], errors='coerce')
                 df_air = df_air.dropna(subset=[t_col, h_col])
                 
-                # Tính toán giá trị số của VPD trước để vẽ biểu đồ dễ dàng
+                # Tính toán chỉ số số học của VPD
                 df_air['VPD (kPa)'] = calculate_vpd(df_air[t_col], df_air[h_col]).round(3)
                 
-                # Áp dụng logic phân loại 7 trường hợp
+                # Áp dụng logic phân loại dữ liệu 7 trường hợp
                 df_air[['Trạng thái', 'Màu sắc', 'Nguyên nhân', 'Giải pháp', 'Là_Lỗi']] = df_air.apply(
                     lambda row: analyze_7_cases(row['VPD (kPa)'], row[t_col], row[h_col], row[stt_col], t_col, h_col), axis=1
                 )
                 
-                # Tạo thêm cột Ngày và Giờ phục vụ chức năng bộ lọc nâng cao
-                df_air['Ngay_Date'] = df_air[time_col].dt.date
-                df_air['Gio_Hour'] = df_air[time_col].dt.hour
+                # Định dạng lại chuỗi thời gian hiển thị
                 df_air['ThoiGian_HienThi'] = df_air[time_col].dt.strftime('%Y-%m-%d %H:%M:%S')
                 
-                # Lấy danh sách tất cả các ngày xuất hiện trong dữ liệu để làm menu chọn
-                available_dates = sorted(df_air['Ngay_Date'].unique())
+                # Sắp xếp xuôi toàn vẹn theo tiến trình thời gian từ cũ tới mới (Bắt đầu từ 18/02)
+                df_air = df_air.sort_values(by=time_col, ascending=True)
                 
-                # --- THIẾT KẾ BỘ LỌC ĐỘNG THEO NGÀY VÀ KHUNG GIỜ ---
-                st.subheader("📅 Bộ Lọc Vi Khí Hậu Nâng Cao")
-                col_filter_1, col_filter_2 = st.columns(2)
+                # --- PHẦN 1: DASHBOARD THỐNG KÊ TỔNG QUAN TỶ LỆ ---
+                st.subheader("📊 Báo Cáo Phân Phối Trạng Thái Nhà Kính Tổng Thể")
                 
-                with col_filter_1:
-                    selected_date = st.selectbox(
-                        "1. Chọn ngày bạn muốn xem báo cáo:", 
-                        available_dates, 
-                        format_func=lambda x: x.strftime('%d / %m / %Y')
-                    )
-                with col_filter_2:
-                    time_option = st.selectbox(
-                        "2. Chọn khung giờ lọc dữ liệu (Mục số 2):", 
-                        ["Tất cả các giờ", "Ban ngày (06:00 - 18:00)", "Ban đêm (18:00 - 06:00 sáng hôm sau)"]
-                    )
+                valid_air_df = df_air[df_air['Là_Lỗi'] == False]
+                total_valid = len(valid_air_df) if len(valid_air_df) > 0 else 1
+                counts = valid_air_df['Trạng thái'].value_counts()
                 
-                # Tiến hành lọc dữ liệu theo Ngày trước
-                df_filtered = df_air[df_air['Ngay_Date'] == selected_date].copy()
-                
-                # Tiếp tục lọc theo Khung giờ
-                if time_option == "Ban ngày (06:00 - 18:00)":
-                    df_filtered = df_filtered[(df_filtered['Gio_Hour'] >= 6) & (df_filtered['Gio_Hour'] < 18)]
-                elif time_option == "Ban đêm (18:00 - 06:00 sáng hôm sau)":
-                    df_filtered = df_filtered[(df_filtered['Gio_Hour'] >= 18) | (df_filtered['Gio_Hour'] < 6)]
-                
-                # Sắp xếp xuôi dòng thời gian tăng dần từ sáng đến tối
-                df_filtered = df_filtered.sort_values(by=time_col, ascending=True)
-                
-                # --- PHẦN BẢO CÁO KẾT QUẢ ĐÃ LỌC ---
-                if df_filtered.empty:
-                    st.warning("Không tìm thấy bản ghi dữ liệu nào thỏa mãn khung giờ lọc đã chọn của ngày này.")
-                else:
-                    # --- VẼ BIỂU ĐỒ ĐƯỜNG BIẾN ĐỘNG THEO THỜI GIAN (MỤC SỐ 1) ---
-                    st.subheader(f"📈 Biểu Đồ Đường Biến Động Chỉ Số VPD Ngày {selected_date.strftime('%d/%m/%Y')}")
-                    st.markdown("Biểu đồ trực quan giúp bạn quan sát đỉnh núi khô nóng (vào buổi trưa) và thung lũng ẩm bão hòa (vào ban đêm):")
-                    
-                    # Chuẩn bị dữ liệu vẽ biểu đồ đường
-                    chart_data = df_filtered.set_index('ThoiGian_HienThi')[['VPD (kPa)']]
-                    st.line_chart(chart_data, color="#2ca02c")
-                    
-                    # --- DASHBOARD TỔNG QUAN ---
-                    st.subheader(f"📊 Báo Cáo Phân Phối Trạng Thái ({time_option})")
-                    
-                    valid_air_df = df_filtered[df_filtered['Là_Lỗi'] == False]
-                    total_valid = len(valid_air_df) if len(valid_air_df) > 0 else 1
-                    counts = valid_air_df['Trạng thái'].value_counts()
-                    
-                    def get_pct(name_contains):
-                        match = [c for c in counts.index if name_contains in c]
-                        return (counts.get(match[0], 0) / total_valid) * 100 if match else 0.0
+                def get_pct(name_contains):
+                    match = [c for c in counts.index if name_contains in c]
+                    return (counts.get(match[0], 0) / total_valid) * 100 if match else 0.0
 
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    col1.metric("⚫ TH5: Bão Hòa Ẩm", f"{get_pct('Trường hợp 5'):.1f}%")
-                    col2.metric("🔴 TH1: VPD Quá Thấp", f"{get_pct('Trường hợp 1'):.1f}%")
-                    col3.metric("🔵 TH2: Thấp Tối Ưu", f"{get_pct('Trường hợp 2'):.1f}%")
-                    col4.metric("🟢 TH3: Cao Tối Ưu", f"{get_pct('Trường hợp 3'):.1f}%")
-                    col5.metric("🟠 TH4: VPD Quá Cao", f"{get_pct('Trường hợp 4'):.1f}%")
-                    
-                    st.info(f"💡 **Trường hợp 7 (Cách ly hệ thống):** Tìm thấy {other_station_rows} dòng dữ liệu của các cảm biến đất (STT 1,2,3) trong file. Hệ thống đã cách ly an toàn, hiện tại biểu đồ và số liệu trên đang tính toán riêng cho dữ liệu khí hậu trạm 5.")
-                    
-                    # --- DANH SÁCH BẮT BỆNH VÀ HIỂN THỊ GIẢI PHÁP CHI TIẾT ---
-                    st.subheader("⚠️ Log Cảnh Báo Vi Khí Hậu & Hướng Dẫn Xử Lý Kỹ Thuật")
-                    st.markdown("Chỉ liệt kê các mốc thời gian vi khí hậu bất thường nguy cơ cao (Sắp xếp xuôi dòng thời gian từ ngày cũ đến ngày mới):")
-                    
-                    alert_conditions = df_filtered['Trạng thái'].str.contains("Trường hợp 5|Trường hợp 1|Trường hợp 4|Lỗi")
-                    alerts_df = df_filtered[alert_conditions]
-                    
-                    if alerts_df.empty:
-                        st.success(f"🎉 Tuyệt vời! Trong khoảng thời gian này của ngày {selected_date.strftime('%d/%m/%Y')}, vi khí hậu hoàn toàn nằm trong ngưỡng phát triển tối ưu.")
-                    else:
-                        for _, row in alerts_df.iterrows():
-                            display_time = row['ThoiGian_HienThi']
-                            status_str = row['Trạng thái']
-                            color = row['Màu sắc']
-                            reason_str = row['Nguyên nhân']
-                            sol_str = row['Giải pháp']
-                            
-                            if color == "darkred":
-                                st.error(f"❌ **⏰ Thời gian: {display_time}** | **{status_str}**")
-                                st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
-                                st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
-                                st.markdown("---")
-                            elif color == "red":
-                                st.error(f"🚨 **⏰ Thời gian: {display_time}** | **{status_str}**")
-                                st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
-                                st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
-                                st.markdown("---")
-                            elif color == "orange":
-                                st.warning(f"⚠️ **⏰ Thời gian: {display_time}** | **{status_str}**")
-                                st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
-                                st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
-                                m = st.markdown("---")
-                            elif color == "gray":
-                                st.info(f"⚙️ **⏰ Thời gian: {display_time}** | **{status_str}**")
-                                st.write(f"🔍 **Chi tiết lỗi hệ thống:** {reason_str}")
-                                st.write(f"🛠️ **Hướng dẫn xử lý phần cứng:** {sol_str}")
-                                st.markdown("---")
-                                
-                    # --- PHẦN 3: XEM BẢNG ĐẦY ĐỦ ---
-                    with st.expander("🔍 Xem bảng dữ liệu phân tích chi tiết đầy đủ của khung giờ này"):
-                        st.dataframe(df_filtered[['ThoiGian_HienThi', stt_col, t_col, h_col, 'VPD (kPa)', 'Trạng thái']], use_container_width=True)
+                col1, col2, col3, col4, col5 = st.columns(5)
+                col1.metric("⚫ TH5: Bão Hòa Ẩm", f"{get_pct('Trường hợp 5'):.1f}%")
+                col2.metric("🔴 TH1: VPD Quá Thấp", f"{get_pct('Trường hợp 1'):.1f}%")
+                col3.metric("🔵 TH2: Thấp Tối Ưu", f"{get_pct('Trường hợp 2'):.1f}%")
+                col4.metric("🟢 TH3: Cao Tối Ưu", f"{get_pct('Trường hợp 3'):.1f}%")
+                col5.metric("🟠 TH4: VPD Quá Cao", f"{get_pct('Trường hợp 4'):.1f}%")
+                
+                st.info(f"💡 **Trường hợp 7 (Cách ly hệ thống):** Tìm thấy {other_station_rows} dòng dữ liệu của các cảm biến đất (STT 1,2,3) trong file. Hệ thống đã cách ly an toàn, dữ liệu thống kê và cảnh báo đang tính toán riêng cho dữ liệu khí hậu trạm 5.")
+                
+                # --- PHẦN 2: DANH SÁCH BẮT BỆNH VÀ HIỂN THỊ GIẢI PHÁP CHI TIẾT ---
+                st.subheader("⚠️ Log Cảnh Báo Vi Khí Hậu & Hướng Dẫn Xử Lý Kỹ Thuật Tổng Thể")
+                st.markdown("Danh sách liệt kê các mốc thời gian phát hiện vi khí hậu bất thường nguy cơ cao từ ngày đầu tiên trở đi:")
+                
+                alert_conditions = df_air['Trạng thái'].str.contains("Trường hợp 5|Trường hợp 1|Trường hợp 4|Lỗi")
+                alerts_df = df_air[alert_conditions]
+                
+                if alerts_df.empty:
+                    st.success("🎉 Xin chúc mừng! Hệ thống kiểm tra toàn bộ dữ liệu và thấy môi trường nhà kính luôn duy trì ở trạng thái tối ưu lý tưởng.")
+                else:
+                    for _, row in alerts_df.iterrows():
+                        display_time = row['ThoiGian_HienThi']
+                        status_str = row['Trạng thái']
+                        color = row['Màu sắc']
+                        reason_str = row['Nguyên nhân']
+                        sol_str = row['Giải pháp']
                         
+                        if color == "darkred":
+                            st.error(f"❌ **⏰ Thời gian: {display_time}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
+                            st.markdown("---")
+                        elif color == "red":
+                            st.error(f"🚨 **⏰ Thời gian: {display_time}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
+                            st.markdown("---")
+                        elif color == "orange":
+                            st.warning(f"⚠️ **⏰ Thời gian: {display_time}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục:** {sol_str}")
+                            st.markdown("---")
+                        elif color == "gray":
+                            st.info(f"⚙️ **⏰ Thời gian: {display_time}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết lỗi hệ thống:** {reason_str}")
+                            st.write(f"🛠️ **Hướng dẫn xử lý phần cứng:** {sol_str}")
+                            st.markdown("---")
+                            
     except Exception as e:
         st.error(f"Không thể đọc file JSON. Lỗi hệ thống: {str(e)}")

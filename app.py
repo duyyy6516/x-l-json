@@ -2,158 +2,193 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
-import re
-import plotly.express as px
 
-# Cấu hình trang
-st.set_page_config(page_title="JSON Data Pro", layout="wide")
-st.title("📊 Công cụ Phân tích Dữ liệu Hệ thống (X-Y Axis)")
+# Cấu hình giao diện ứng dụng sạch sẽ, chuyên nghiệp
+st.set_page_config(
+    page_title="Hệ Thống Phân Tích & Cảnh Báo VPD Nhà Kính",
+    page_icon="🌿",
+    layout="wide"
+)
 
-# 1. Đồng nhất Key
-def normalize_keys(data):
-    if isinstance(data, list):
-        return [normalize_keys(item) for item in data]
-    elif isinstance(data, dict):
-        return {str(k).strip().lower(): normalize_keys(v) for k, v in data.items()}
-    return data
+st.title("🌿 Hệ Thống Phân Tích & Cảnh Báo VPD Nhà Kính")
+st.markdown("Ứng dụng tự động phân tích dữ liệu, tính toán chỉ số **VPD**, bắt bệnh môi trường nhà kính theo **7 trường hợp toàn diện** và đề xuất giải pháp kỹ thuật cụ thể.")
 
-# 2. Làm phẳng JSON
-def flatten_json(y):
-    out = {}
-    def flatten(x, name=''):
-        if isinstance(x, dict):
-            for a in x: flatten(x[a], name + a + '.')
-        elif isinstance(x, list):
-            i = 0
-            for a in x:
-                flatten(a, name + str(i) + '.')
-                i += 1
-        else: out[name[:-1]] = x
-    flatten(y)
-    return out
+# 1. ĐỊNH NGHĨA LOGIC PHÂN TÍCH TOÀN DIỆN (7 TRƯỜNG HỢP)
+def calculate_vpd(temp, humi):
+    """Tính toán chỉ số VPD (kPa) từ Nhiệt độ (°C) và Độ ẩm (%)"""
+    # Công thức Tetens tính Áp suất hơi bão hòa (Saturated Vapor Pressure)
+    vp_sat = 0.61078 * np.exp((17.27 * temp) / (temp + 237.3))
+    # Tính Thiếu hụt áp suất hơi nước (Vapor Pressure Deficit)
+    vpd = vp_sat * (1 - (humi / 100))
+    return np.clip(vpd, 0, None)
 
-# --- CSS ĐỂ THÊM THANH TRƯỢT NGANG ---
-st.markdown("""
-    <style>
-    .scroll-container {
-        overflow-x: auto;
-        white-space: nowrap;
-    }
-    </style>
-""", unsafe_allow_html=True)
+def analyze_7_cases(temp, humi):
+    """
+    Phân loại chi tiết dữ liệu đầu vào dựa trên 7 trường hợp vận hành thực tế
+    Trả về: (Trạng thái, Màu hiển thị, Nguyên nhân chi tiết, Giải pháp đề xuất, Có_Phải_Lỗi)
+    """
+    # --- THÀNH PHẦN NGOẠI LỆ (LỖI THIẾT BỊ / DỮ LIỆU) ---
+    # Trường hợp 6: Lỗi cảm biến hoặc giá trị vượt giới hạn vật lý tự nhiên
+    if pd.isna(temp) or pd.isna(humi):
+        return pd.Series(["Lỗi dữ liệu", "gray", "Bản ghi bị khuyết thiếu thông số Nhiệt độ hoặc Độ ẩm.", "Bỏ qua dòng này. Kiểm tra lại log truyền nhận dữ liệu.", True])
+    
+    if temp < -10 or temp > 60 or humi < 0 or humi > 100:
+        return pd.Series(["Lỗi thiết bị (Out of Range)", "gray", f"Cảm biến trả về giá trị bất thường (Nhiệt độ: {temp}°C, Độ ẩm: {humi}%). Có thể đầu dò bị treo hoặc dính nước.", "Bỏ qua mốc tính toán này. Vui lòng kiểm tra, vệ sinh hoặc thay thế đầu dò cảm biến khí hậu.", True])
+    
+    # Tính VPD cho dữ liệu hợp lệ
+    vpd = round(calculate_vpd(temp, humi), 3)
+    
+    # --- THÀNH PHẦN SINH LÝ CÂY TRỒNG & VẬN HÀNH ---
+    # Trường hợp 5: Độ ẩm bão hòa hoàn toàn (Độ ẩm đạt 100%, VPD = 0)
+    if humi >= 99.5 or vpd == 0:
+        return pd.Series([
+            f"Trường hợp 5: Bão hòa hơi nước (VPD: {vpd} kPa)", 
+            "darkred", 
+            "Không khí đạt trạng thái bão hòa ẩm hoàn toàn (Độ ẩm 100%). Thường xảy ra vào ban đêm, khi trời mưa kéo dài hoặc phun sương quá mức.", 
+            "Cảnh báo nguy cơ đọng sương gây nấm bệnh! Kích hoạt ngay quạt đối lưu và quạt hút để ép ẩm ra ngoài; mở cửa thông gió; tuyệt đối ngừng tưới; nếu là ban đêm hãy bật hệ thống sưởi nâng nhiệt để giảm ẩm bão hòa.",
+            False
+        ])
+        
+    # Trường hợp 1: VPD Quá Thấp (VPD < 0.4 kPa)
+    elif vpd < 0.4:
+        return pd.Series([
+            f"Trường hợp 1: VPD Quá Thấp (VPD: {vpd} kPa)", 
+            "red", 
+            f"Độ ẩm không khí quá cao ({humi}%) hoặc nhiệt độ hạ thấp ({temp}°C). Cây bị nghẹn rễ, không thể thoát hơi nước để hút dinh dưỡng.", 
+            "Bật quạt đối lưu điều hòa không khí; ngừng toàn bộ hệ thống phun sương làm mát; mở bớt mái che hoặc cửa hông để thoát ẩm.",
+            False
+        ])
+        
+    # Trường hợp 2: VPD Thấp Tối Ưu (0.4 <= VPD < 0.8 kPa)
+    elif 0.4 <= vpd < 0.8:
+        return pd.Series([
+            f"Trường hợp 2: Thấp Tối Ưu (VPD: {vpd} kPa)", 
+            "blue", 
+            "Môi trường vi khí hậu ẩm dịu mát, chênh lệch áp suất hơi nước nhẹ nhàng.", 
+            "Điều kiện hoàn hảo cho giai đoạn kích rễ, nuôi cây mô hoặc cây con mới ra vườn giúp tránh mất nước qua lá. Tiếp tục duy trì ổn định.",
+            False
+        ])
+        
+    # Trường hợp 3: Cao Tối Ưu (0.8 <= VPD <= 1.2 kPa)
+    elif 0.8 <= vpd <= 1.2:
+        return pd.Series([
+            f"Trường hợp 3: Cao Tối Ưu (VPD: {vpd} kPa)", 
+            "green", 
+            "Sự cân bằng tuyệt vời giữa nhiệt độ ngày và độ ẩm. Khí khổng mở tối đa.", 
+            "Vùng vàng kích hoạt năng suất cao nhất cho cây trưởng thành quang hợp và hấp thụ phân bón (Canxi, Magiê). Duy trì các chế độ vận hành hiện tại.",
+            False
+        ])
+        
+    # Trường hợp 4: VPD Quá Cao (VPD > 1.2 kPa)
+    else:
+        return pd.Series([
+            f"Trường hợp 4: VPD Quá Cao (VPD: {vpd} kPa)", 
+            "orange", 
+            f"Nhiệt độ không khí quá cao ({temp}°C) hoặc không khí khô hanh (Độ ẩm sụt giảm sâu còn {humi}%). Cây bị stress nặng, phải đóng khí khổng tự vệ, ngừng quang hợp.", 
+            "Kích hoạt ngay hệ thống phun sương bù ẩm; kéo lưới cắt nắng giảm bức xạ nhiệt; tăng cường tưới nhỏ giọt dưới gốc cấp nước cho rễ.",
+            False
+        ])
 
-# --- XỬ LÝ FILE UPLOAD ---
-uploaded_file = st.file_uploader("Tải lên file JSON", type=['json'])
+# 2. KHU VỰC TẢI FILE DỮ LIỆU JSON
+uploaded_file = st.file_uploader("Kéo thả file dữ liệu 'Quan trắc thực địa.json' vào đây để chạy thử", type=["json"])
 
 if uploaded_file is not None:
-    try:
-        raw_data = json.load(uploaded_file)
-        if isinstance(raw_data, dict): raw_data = [raw_data]
-        
-        clean_json = normalize_keys(raw_data)
-        df = pd.DataFrame([flatten_json(row) for row in clean_json])
-        
-        df = df.dropna(axis=1, how='all').loc[:, ~df.columns.duplicated()]
-        df = df.replace(r'^\s*$', np.nan, regex=True)
-        display_df = df.fillna("")
+    try:
+        raw_data = json.load(uploaded_file)
+        df = pd.DataFrame(raw_data)
+        
+        # Trường hợp 7: Trạm không có dữ liệu khí hậu (Lọc dữ liệu vi khí hậu)
+        if 'STT' not in df.columns or 'Thời gian' not in df.columns:
+            st.error("Cấu trúc file không đúng định dạng kiểm thử hệ thống (Thiếu cột STT hoặc Thời gian).")
+        else:
+            # Lọc riêng dữ liệu vi khí hậu của trạm STT == "5"
+            df_air = df[df['STT'] == "5"].copy()
+            
+            # Tính toán số lượng dòng thuộc trạm khác (Trường hợp 7)
+            total_rows = len(df)
+            station_5_rows = len(df_air)
+            other_station_rows = total_rows - station_5_rows
+            
+            # Chuyển đổi định dạng số cho cột nhiệt độ, độ ẩm không khí
+            df_air['tempKK'] = pd.to_numeric(df_air['tempKK'], errors='coerce')
+            df_air['humiKK'] = pd.to_numeric(df_air['humiKK'], errors='coerce')
+            
+            # Áp dụng hàm phân tích 7 trường hợp
+            df_air[['Trạng thái', 'Màu sắc', 'Nguyên nhân', 'Giải pháp', 'Là_Lỗi']] = df_air.apply(
+                lambda row: analyze_7_cases(row['tempKK'], row['humiKK']), axis=1
+            )
+            
+            # --- PHẦN 1: DASHBOARD THỐNG KÊ TỔNG QUAN ---
+            st.subheader("📊 Báo Cáo Phân Phối Trạng Thái Nhà Kính")
+            
+            # Tính toán phần trăm phân bổ (loại bỏ dòng lỗi phần cứng khi tính sinh lý)
+            valid_air_df = df_air[df_air['Là_Lỗi'] == False]
+            total_valid = len(valid_air_df) if len(valid_air_df) > 0 else 1
+            
+            counts = valid_air_df['Trạng thái'].value_counts()
+            
+            def get_pct(name_contains):
+                match = [c for c in counts.index if name_contains in c]
+                return (counts.get(match[0], 0) / total_valid) * 100 if match else 0.0
 
-        st.subheader(f"📋 Bảng dữ liệu gốc ({len(df)} bản ghi)")
-        st.data_editor(display_df, use_container_width=True)
-        st.divider()
-
-        # --- THIẾT LẬP BIỂU ĐỒ ---
-        st.subheader("⚙️ Thiết lập biểu đồ & Đối chiếu X-Y")
-        time_col = next((col for col in df.columns if 'time' in col.lower() or 'thời gian' in col.lower()), None)
-        start_d, end_d = None, None
-        
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            if time_col:
-                t_dates = pd.to_datetime(df[time_col].astype(str).str.replace('-', ':').str.replace(':', '-', 2), errors='coerce')
-                valid_ts = t_dates.dropna()
-                if not valid_ts.empty:
-                    min_d, max_d = valid_ts.min().date(), valid_ts.max().date()
-                    sel_date = st.date_input("Lọc theo ngày:", value=(min_d, max_d), min_value=min_d, max_value=max_d)
-                    start_d, end_d = (sel_date[0], sel_date[1]) if len(sel_date) == 2 else (sel_date[0], sel_date[0])
-            
-            resample_choice = st.selectbox("Làm mượt dữ liệu:", ["Nguyên bản", "Trung bình mỗi phút", "Trung bình mỗi 5 phút"])
-            resample_dict = {"Nguyên bản": None, "Trung bình mỗi phút": "1min", "Trung bình mỗi 5 phút": "5min"}
-
-        with col2:
-            exclude = [time_col, 'stt', 'tên khu', 'trạng thái', 'phương thức hoạt động', 'người điều khiển']
-            numeric_options = [c for c in df.columns if c not in exclude and '_id' not in c]
-            group_options = ["Không phân nhóm"] + [c for c in df.columns if c in exclude and c != time_col and c != 'stt']
-            group_col = st.selectbox("Tách các đường biểu đồ theo (VD: Tên khu):", group_options)
-            
-            st.write("Chọn chỉ số vẽ biểu đồ:")
-            cols_ui = st.columns(4)
-            selected_keys = [k for i, k in enumerate(numeric_options) if cols_ui[i % 4].checkbox(k.upper(), key=f"c_{k}")]
-            lock_zoom = st.checkbox("🔒 Khóa trượt (Chỉ cho phép Zoom)", value=True)
-
-        # --- XỬ LÝ VÀ VẼ BIỂU ĐỒ ---
-        if st.button("🚀 TẠO BIỂU ĐỒ & BẢNG ĐỐI CHIẾU", type="primary"):
-            if not selected_keys:
-                st.warning("Hãy chọn ít nhất 1 chỉ số!")
-            else:
-                working_df = df.copy()
-                if time_col and start_d and end_d:
-                    working_df[time_col] = pd.to_datetime(working_df[time_col].astype(str).str.replace('-', ':').str.replace(':', '-', 2), errors='coerce')
-                    working_df = working_df.dropna(subset=[time_col])
-                    mask = (working_df[time_col].dt.date >= start_d) & (working_df[time_col].dt.date <= end_d)
-                    working_df = working_df[mask]
-
-                for col in selected_keys:
-                    all_points = []
-                    for idx, row in working_df.iterrows():
-                        main_time = row[time_col]
-                        val = str(row[col]).strip()
-                        group_val = str(row[group_col]) if group_col != "Không phân nhóm" else "Tất cả"
-                        if val and val.lower() != 'nan':
-                            matches = re.findall(r'(\d{2}-\d{2}-\d{2})/([-+]?\d*\.?\d+)', val)
-                            if matches:
-                                for t_str, v_str in matches:
-                                    try:
-                                        full_t_str = f"{main_time.strftime('%Y-%m-%d')} {t_str.replace('-', ':')}"
-                                        all_points.append({'TG': pd.to_datetime(full_t_str), 'Giá trị': float(v_str), 'Nhóm': group_val})
-                                    except: pass
-                            else:
-                                num_match = re.search(r'[-+]?\d*\.?\d+', val)
-                                if num_match:
-                                    all_points.append({'TG': main_time, 'Giá trị': float(num_match.group()), 'Nhóm': group_val})
-
-                    if all_points:
-                        chart_df = pd.DataFrame(all_points)
-                        rule = resample_dict[resample_choice]
-                        plot_data = chart_df.set_index('TG').groupby('Nhóm').resample(rule)['Giá trị'].mean().dropna().reset_index() if rule else chart_df.groupby(['TG', 'Nhóm'])['Giá trị'].mean().reset_index()
-
-                        if not plot_data.empty:
-                            plot_data = plot_data.sort_values(by='TG')
-                            st.write(f"### Biểu đồ: {col.upper()}")
-                            
-                            # TÍNH TOÁN CHIỀU RỘNG DỰA TRÊN SỐ LƯỢNG ĐIỂM
-                            num_points = len(plot_data)
-                            dynamic_width = max(1000, num_points * 10) # Mỗi điểm 10px, tối thiểu 1000px
-                            
-                            fig = px.line(plot_data, x='TG', y='Giá trị', color='Nhóm', markers=True)
-                            fig.update_layout(
-                                width=dynamic_width, # Ép chiều rộng biểu đồ
-                                xaxis_title="Thời gian (TG)",
-                                yaxis_title=f"Giá trị ({col.upper()})",
-                                xaxis=dict(fixedrange=False),
-                                yaxis=dict(fixedrange=False),
-                                dragmode='zoom' if lock_zoom else 'pan',
-                                hovermode="x unified",
-                                legend_title_text="Phân nhóm" if group_col != "Không phân nhóm" else None,
-                                uirevision='constant'
-                            )
-                            
-                            # HIỂN THỊ TRONG DIV CÓ THANH TRƯỢT
-                            st.markdown('<div class="scroll-container">', unsafe_allow_html=True)
-                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': True})
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            with st.expander(f"Xem bảng đối chiếu giá trị cho {col.upper()}"):
-                                st.dataframe(plot_data, use_container_width=True)
-                    st.write("---")
-    except Exception as e:
-        st.error(f"Lỗi hệ thống: {e}") 
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("⚫ TH5: Bão Hòa Ẩm", f"{get_pct('Trường hợp 5'):.1f}%")
+            col2.metric("🔴 TH1: VPD Quá Thấp", f"{get_pct('Trường hợp 1'):.1f}%")
+            col3.metric("🔵 TH2: Thấp Tối Ưu", f"{get_pct('Trường hợp 2'):.1f}%")
+            col4.metric("🟢 TH3: Cao Tối Ưu", f"{get_pct('Trường hợp 3'):.1f}%")
+            col5.metric("🟠 TH4: VPD Quá Cao", f"{get_pct('Trường hợp 4'):.1f}%")
+            
+            # Hiển thị thông báo về Trường hợp 7 (Mất đồng bộ trạm đất)
+            st.info(f"💡 **Trường hợp 7 (Hệ thống phân tách dữ liệu):** Tìm thấy {other_station_rows} dòng dữ liệu thuộc các trạm đo đất (STT 1, 2, 3). Hệ thống đã tự động phân loại cách ly và chỉ tập trung xử lý {station_5_rows} dòng dữ liệu của trạm khí hậu.")
+            
+            # --- PHẦN 2: DANH SÁCH BẮT BỆNH VÀ HIỂN THỊ GIẢI PHÁP CHI TIẾT ---
+            st.subheader("⚠️ Log Cảnh Báo Vi Khí Hậu & Hướng Dẫn Xử Lý Kỹ Thuật")
+            st.markdown("Hệ thống liệt kê danh sách các mốc thời gian vi khí hậu bất thường nguy cơ cao (Sắp xếp từ mới nhất trở về trước):")
+            
+            # Lọc các dòng cần cảnh báo khẩn cấp (TH5 bão hòa, TH1 quá thấp, TH4 quá cao, hoặc lỗi thiết bị)
+            alert_conditions = df_air['Trạng thái'].str.contains("Trường hợp 5|Trường hợp 1|Trường hợp 4|Lỗi")
+            alerts_df = df_air[alert_conditions].sort_values(by='Thời gian', ascending=False)
+            
+            if alerts_df.empty:
+                st.success("🎉 Xin chúc mừng! Hệ thống kiểm tra toàn bộ file dữ liệu và thấy môi trường nhà kính luôn duy trì ở trạng thái tối ưu lý tưởng.")
+            else:
+                # Duyệt qua các bản ghi lỗi để "bắt bệnh" và in giải pháp ra giao diện
+                for _, row in alerts_df.iterrows():
+                    time_str = row['Thời gian']
+                    status_str = row['Trạng thái']
+                    color = row['Màu sắc']
+                    reason_str = row['Nguyên nhân']
+                    sol_str = row['Giải pháp']
+                    
+                    # Sử dụng khối hộp container trực quan theo màu quy định
+                    if color == "darkred":
+                        with st.container():
+                            st.error(f"❌ **⏰ {time_str}** | **{status_str}**")
+                            st.write(f"🔍 **Lý do hệ thống phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục nhà kính:** {sol_str}")
+                            st.markdown("---")
+                    elif color == "red":
+                        with st.container():
+                            st.error(f"🚨 **⏰ {time_str}** | **{status_str}**")
+                            st.write(f"🔍 **Lý do hệ thống phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục nhà kính:** {sol_str}")
+                            st.markdown("---")
+                    elif color == "orange":
+                        with st.container():
+                            st.warning(f"⚠️ **⏰ {time_str}** | **{status_str}**")
+                            st.write(f"🔍 **Lý do hệ thống phân tích:** {reason_str}")
+                            st.write(f"🛠️ **Biện pháp khắc phục nhà kính:** {sol_str}")
+                            st.markdown("---")
+                    elif color == "gray":
+                        with st.container():
+                            st.info(f"⚙️ **⏰ {time_str}** | **{status_str}**")
+                            st.write(f"🔍 **Chi tiết lỗi phần cứng:** {reason_str}")
+                            st.write(f"🛠️ **Hướng dẫn xử lý phần cứng:** {sol_str}")
+                            st.markdown("---")
+                            
+            # --- PHẦN 3: XEM TOÀN BỘ BẢNG DỮ LIỆU GỐC ĐÃ XỬ LÝ ---
+            with st.expander("🔍 Xem chi tiết bảng dữ liệu phân tích đầy đủ"):
+                st.dataframe(df_air[['Thời gian', 'STT', 'tempKK', 'humiKK', 'Trạng thái']], use_container_width=True)
+                
+    except Exception as e:
+        st.error(f"Không thể đọc file JSON. Lỗi hệ thống: {str(e)}")

@@ -5,13 +5,13 @@ import json
 
 # Cấu hình giao diện ứng dụng tối giản
 st.set_page_config(
-    page_title="Công Cụ Tính & Phân Loại VPD Nhà Kính",
+    page_title="Công Cụ Tính & Phân Tích VPD Nhà Kính",
     page_icon="🌿",
     layout="wide"
 )
 
-st.title("🌿 Công Cụ Tính & Phân Loại VPD Nhà Kính")
-st.markdown("Ứng dụng tự động quy đổi dữ liệu thô, tính toán chỉ số **VPD** và tạo cột phân loại trạng thái môi trường.")
+st.title("🌿 Công Cụ Tính & Phân Tích VPD Nhà Kính")
+st.markdown("Ứng dụng tự động tính chỉ số **VPD**, tự động bắt bệnh tách riêng cột **Trạng Thái, Lý Do** và **Cách Giải Quyết** trực tiếp dựa trên số liệu thực tế.")
 
 def calculate_vpd(temp, humi):
     """Tính toán chỉ số VPD (kPa) từ Nhiệt độ và Độ ẩm theo công thức Tetens"""
@@ -19,18 +19,71 @@ def calculate_vpd(temp, humi):
     vpd = vp_sat * (1 - (humi / 100))
     return np.clip(vpd, 0, None)
 
-def classify_vpd_case(vpd, humi):
-    """Dựa vào giá trị VPD và độ ẩm đã tính để lọc ra Trường hợp (TH) cụ thể"""
+def analyze_environment_details(vpd, temp, humi):
+    """
+    Hàm trung tâm phân tích tách bạch thành 3 nội dung: Trạng Thái, Lý Do, Cách Giải Quyết.
+    Không dùng ký hiệu TH1, TH4, TH5.
+    """
+    # 1. Kiểm tra trường hợp mất tín hiệu hoặc lỗi cảm biến ẩm
+    if humi == 0:
+        return pd.Series([
+            "Mất Tín Hiệu Cảm Biến",
+            "Độ ẩm trả về bằng 0% (Cảm biến đang để ngoài không khí hoặc bị tuột dây).",
+            "Kiểm tra lại giắc cắm đầu dò và đường truyền tín hiệu phần cứng."
+        ])
+    
+    # 2. Kiểm tra trạng thái bão hòa ẩm hoàn toàn
     if humi >= 99.5 or vpd == 0:
-        return "TH5: Bão hòa hơi nước (Ẩm bão hòa)"
-    elif vpd < 0.4:
-        return "TH1: VPD Quá Thấp (Không khí quá ẩm)"
-    elif 0.4 <= vpd < 0.8:
-        return "TH2: Thấp Tối Ưu (Ẩm dịu mát cho cây con)"
-    elif 0.8 <= vpd <= 1.2:
-        return "TH3: Cao Tối Ưu (Vùng quang hợp mạnh tốt nhất)"
+        return pd.Series([
+            "Bão Hòa Hơi Nước",
+            f"Độ ẩm trong môi trường chạm trần tuyệt đối ({humi}%).",
+            "Bật ngay quạt hút, quạt đối lưu để cưỡng bức thoát ẩm; ngừng tưới nước hoàn toàn."
+        ])
+    
+    # 3. Kiểm tra trạng thái VPD Thấp (Không khí quá ẩm)
+    if vpd < 0.4:
+        return pd.Series([
+            "VPD Quá Thấp",
+            f"Độ ẩm môi trường quá cao ({humi}%) kết hợp nhiệt độ thấp làm nghẹn rễ cây.",
+            "Bật quạt đối lưu điều hòa không khí và mở bớt cửa thông gió hông nhà kính."
+        ])
+    
+    # 4. Kiểm tra trạng thái Thấp Tối Ưu
+    if 0.4 <= vpd < 0.8:
+        return pd.Series([
+            "Tối Ưu (Ẩm Dịu Mát)",
+            "Nhiệt độ và Độ ẩm nằm trong dải điều hòa an toàn tuyệt đối.",
+            "Môi trường hoàn hảo cho rễ non và cây con. Duy trì ổn định hệ thống."
+        ])
+    
+    # 5. Kiểm tra trạng thái Cao Tối Ưu
+    if 0.8 <= vpd <= 1.2:
+        return pd.Series([
+            "Tối Ưu (Quang Hợp Mạnh)",
+            "Sự cân bằng tuyệt vời giúp khí khổng mở tối đa để hấp thụ dinh dưỡng.",
+            "Môi trường kích năng suất tốt nhất cho cây trưởng thành. Duy trì vận hành."
+        ])
+    
+    # 6. Kiểm tra trạng thái VPD Quá Cao (Phần lớn dữ liệu trong file của bạn)
+    # Tự động bắt mạch lý do sâu hơn dựa trên thông số Nhiệt độ và Độ ẩm thật
+    if temp > 40.0 and humi < 40.0:
+        return pd.Series([
+            "VPD Quá Cao",
+            f"Nhiệt độ quá nóng ({temp}°C) đồng thời không khí quá khô cằn ({humi}%).",
+            "Kéo lưới lan cắt nắng giảm bức xạ nhiệt trực tiếp và bật phun sương bù ẩm khẩn cấp."
+        ])
+    elif humi < 40.0:
+        return pd.Series([
+            "VPD Quá Cao",
+            f"Độ ẩm môi trường sụt giảm sâu ({humi}%), không khí hanh khô gây mất nước bốc hơi nhanh.",
+            "Kích hoạt hệ thống phun sương để tăng ẩm không khí lên dải an toàn."
+        ])
     else:
-        return "TH4: VPD Quá Cao (Stress khô nóng/Hanh khô)"
+        return pd.Series([
+            "VPD Quá Cao",
+            f"Nhiệt độ tăng cao ({temp}°C) hun đúc làm đẩy áp suất bốc hơi lên ngưỡng stress.",
+            "Tăng cường chu kỳ tưới nhỏ giọt dưới gốc để cấp đủ nước cho bộ rễ làm mát cây."
+        ])
 
 # Khu vực tải file dữ liệu JSON
 uploaded_file = st.file_uploader("Kéo thả file dữ liệu JSON vào đây để phân tích", type=["json"])
@@ -54,17 +107,16 @@ if uploaded_file is not None:
             df[time_col] = df[time_col].astype(str)
             df[stt_col] = df[stt_col].astype(str)
             
-            # Danh sách chứa các bảng dữ liệu sau khi xử lý của từng trạm
             processed_chunks = []
             
-            # Duyệt qua từng Trạm có trong file để xử lý cột Nhiệt độ và Độ ẩm tương ứng
+            # Duyệt qua từng Trạm để bóc tách dữ liệu
             for station_id in df[stt_col].unique():
                 sub_df = df[df[stt_col] == station_id].copy()
                 
                 t_col, h_col = None, None
                 
                 if station_id == "5":
-                    # Trạm 5 không khí: Lấy tempKK và humiKK
+                    # Trạm 5 không khí: tempKK và humiKK
                     for col in sub_df.columns:
                         if col.lower() in ['tempkk', 'temp_kk', 'nhietdokk', 'temp']: t_col = col
                         if col.lower() in ['humikk', 'humi_kk', 'doamkk', 'humi']: h_col = col
@@ -92,29 +144,30 @@ if uploaded_file is not None:
                         sub_df[t_col] = sub_df[t_col].apply(lambda x: x / 10.0 if x > 100 else x)
                         sub_df[h_col] = sub_df[h_col].apply(lambda x: x / 10.0 if x > 100 else x)
                 
-                # Nếu trạm có đủ cặp Nhiệt độ và Độ ẩm thì tiến hành tính toán
                 if t_col and h_col:
                     sub_df = sub_df.dropna(subset=[t_col, h_col])
                     if not sub_df.empty:
-                        # 1. Tính chỉ số VPD trước
+                        # Bước 1: Tính toán chỉ số VPD trước
                         sub_df['VPD (kPa)'] = calculate_vpd(sub_df[t_col], sub_df[h_col]).round(3)
                         
-                        # 2. Dựa vào VPD lọc ra Trường hợp và tạo thêm cột ghi nhận điều đó
-                        sub_df['Phân Loại Trạng Thái'] = sub_df.apply(lambda row: classify_vpd_case(row['VPD (kPa)'], row[h_col]), axis=1)
+                        # Bước 2: Phân tích sâu tách thành 3 nội dung cột riêng biệt dựa trên thông số thật
+                        sub_df[['Trạng Thái', 'Lý Do Chi Tiết', 'Cách Giải Quyết']] = sub_df.apply(
+                            lambda row: analyze_environment_details(row['VPD (kPa)'], row[t_col], row[h_col]), axis=1
+                        )
                         
-                        # Chỉ lấy đúng các cột cần in ra màn hình
-                        processed_chunks.append(sub_df[[time_col, stt_col, 'VPD (kPa)', 'Phân Loại Trạng Thái']])
+                        # Giữ lại các cột theo cấu trúc bảng sạch tinh gọn
+                        sub_cols = [time_col, stt_col, 'VPD (kPa)', 'Trạng Thái', 'Lý Do Chi Tiết', 'Cách Giải Quyết']
+                        processed_chunks.append(sub_df[sub_cols])
             
-            # Gộp chung dữ liệu các trạm lại và in ra bảng tổng hợp
+            # Gộp chung dữ liệu các trạm và xuất ra bảng tổng hợp duy nhất
             if processed_chunks:
                 final_df = pd.concat(processed_chunks, ignore_index=True)
-                # Sắp xếp thứ tự xuôi theo dòng thời gian
                 final_df = final_df.sort_values(by=time_col, ascending=True)
                 
-                st.subheader("📋 Bảng Kết Quả Chỉ Số VPD & Phân Loại Trường Hợp Tổng Hợp")
-                st.write(f"Tổng số mốc xử lý thành công: **{len(final_df)}** dòng.")
+                st.subheader("📋 Bảng Kết Quả Tính Toán Chỉ Số VPD & Hướng Dẫn Điều Hành Nhà Kính")
+                st.write(f"Tổng số mốc thời gian xử lý thành công: **{len(final_df)}** dòng.")
                 
-                # In ra giao diện bảng sạch theo yêu cầu
+                # Hiển thị bảng sạch cấu trúc phân tách rõ ràng ra giao diện
                 st.dataframe(final_df, use_container_width=True)
             else:
                 st.warning("⚠️ Không thể trích xuất dữ liệu Nhiệt độ và Độ ẩm hợp lệ từ file để phân tích.")
